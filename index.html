@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self'; img-src 'self'">
 <title>World Cup 2026 — what's at stake</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -214,6 +215,24 @@ footer{border-top:1px solid var(--line);margin-top:10px;background:var(--card)}
 <aside class="drawer" id="drawer"></aside>
 
 <script>
+/* ===================== SANITISE ===================== */
+const SAFE_TAGS=new Set(['B','STRONG','EM','I']);
+function sanitise(html){
+  if(!html)return '';
+  const tpl=document.createElement('template');
+  tpl.innerHTML=html;
+  (function walk(node){
+    for(let ch=node.firstChild;ch;){
+      const next=ch.nextSibling;
+      if(ch.nodeType===1){
+        if(!SAFE_TAGS.has(ch.tagName)){const f=document.createDocumentFragment();while(ch.firstChild)f.appendChild(ch.firstChild);ch.replaceWith(f);walk(f);}else{walk(ch);}
+      }
+      ch=next;
+    }
+  })(tpl.content);
+  const d=document.createElement('div');d.appendChild(tpl.content.cloneNode(true));return d.innerHTML;
+}
+
 /* ===================== STATIC REFERENCE ===================== */
 const FLAG_ISO={MEX:'MX',RSA:'ZA',KOR:'KR',CZE:'CZ',SUI:'CH',CAN:'CA',BIH:'BA',QAT:'QA',BRA:'BR',MAR:'MA',HAI:'HT',
 USA:'US',AUS:'AU',PAR:'PY',TUR:'TR',GER:'DE',CIV:'CI',ECU:'EC',CUW:'CW',NED:'NL',JPN:'JP',SWE:'SE',TUN:'TN',
@@ -294,7 +313,7 @@ function renderGames(){
        <div class="score">vs</div>
        <div class="tm" data-team="${away}"><span class="fl">${flag(away)}</span><span class="nm">${NAME[away]}</span>${pill(away)}</div>
      </div>
-     <div class="stake">${STAKE[id]||''}</div>
+     <div class="stake">${sanitise(STAKE[id])}</div>
    </div>`;});
   html+='</div>';});
  $('#gamesList').innerHTML=html;
@@ -362,7 +381,7 @@ function openTeam(c){
    <div class="c"><div class="v">${x.gf}:${x.ga}</div><div class="k">Goals</div></div>
    <div class="c"><div class="v">${x.gd>0?'+':''}${x.gd}</div><div class="k">Diff</div></div>
   </div>
-  <div class="dsec"><h4>Where they stand</h4><p>${NOTE[c]||''}</p></div>
+  <div class="dsec"><h4>Where they stand</h4><p>${sanitise(NOTE[c])}</p></div>
   ${race}
   <div class="dsec"><h4>Their games</h4>${matches}</div>`;
  $('#scrim').classList.add('on');$('#drawer').classList.add('on');
@@ -387,9 +406,9 @@ async function init(){
   GROUPS=d.groups;GROUPS.forEach(g=>g.m.forEach((mm,i)=>{if(mm.length<8)mm.push(g.id+'-'+i)}));
   NOTE=d.notes||{};STAKE=d.stakes||{};
   WINNERS=new Set(d.winners||[]);LOCK_THROUGH=new Set(d.through||[]);LOCK_OUT=new Set(d.out||[]);LOCK_WILD=new Set(d.wild||[]);
-  $('#asof').textContent='final group games · as of '+(d.asOf||'');
+  $('#asof').textContent='final group games \u00b7 as of '+(d.asOf||'');
   const done=GROUPS.filter(isComplete).length;
-  $('#footnote').innerHTML=`Results captured ${d.asOfFull||''} from public sources (Wikipedia, ESPN, FIFA, Sky, FOX). ${done} of 12 groups complete. Not affiliated with FIFA.`;
+  $('#footnote').textContent=`Results captured ${d.asOfFull||''} from public sources (Wikipedia, ESPN, FIFA, Sky, FOX). ${done} of 12 groups complete. Not affiliated with FIFA.`;
   renderAll();
  }catch(err){
   console.error('data load failed',err);
