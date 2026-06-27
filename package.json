@@ -1,0 +1,15 @@
+{
+  "name": "worldcup-stakes",
+  "version": "1.0.0",
+  "description": "A simple, mobile-first viewer for the 2026 World Cup group stage: the games, what each one means in plain English, and who's going through, still alive, or knocked out — including the race for the 8 best third-place \"wildcard\" spots.",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest --coverage"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "jest": "^30.4.2"
+  }
+}
