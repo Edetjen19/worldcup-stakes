@@ -226,6 +226,16 @@ const DAYS={'Jun 25':'Tonight · Thursday 25 June','Jun 26':'Friday 26 June','Ju
 /* loaded from data.json */
 let GROUPS=[],NOTE={},STAKE={},WINNERS=new Set(),LOCK_THROUGH=new Set(),LOCK_OUT=new Set(),LOCK_WILD=new Set();
 
+/* ===================== SHARED UTILITIES ===================== */
+function fmtGd(gd){return(gd>0?'+':'')+gd}
+const STATUS_COLORS={through:'green',alive:'amber',out:'red'};
+function statusCssVar(k,suffix){return'var(--'+STATUS_COLORS[k]+(suffix?'-'+suffix:'')+')'}
+function groupRuns(arr,eqFn){
+ const segs=[];if(!arr.length)return segs;let cur=[arr[0]];
+ for(let i=1;i<arr.length;i++){if(eqFn(arr[i-1],arr[i]))cur.push(arr[i]);else{segs.push(cur);cur=[arr[i]]}}
+ segs.push(cur);return segs;
+}
+
 /* ===================== ENGINE ===================== */
 function eff(mm){return{hs:mm[2],as:mm[3],played:!!mm[4]};}
 function isComplete(g){return g.m.every(mm=>eff(mm).played);}
@@ -237,10 +247,10 @@ function mini(blk,g){const t={};blk.forEach(c=>t[c]={pts:0,gd:0,gf:0});
  g.m.forEach(mm=>{const e=eff(mm);if(!e.played)return;if(blk.includes(mm[0])&&blk.includes(mm[1])){const H=t[mm[0]],A=t[mm[1]];H.gf+=e.hs;H.gd+=e.hs-e.as;A.gf+=e.as;A.gd+=e.as-e.hs;if(e.hs>e.as)H.pts+=3;else if(e.hs<e.as)A.pts+=3;else{H.pts++;A.pts++}}});return t;}
 function byOverall(s,t,g){return[...s].sort((a,b)=>t[b].gd-t[a].gd||t[b].gf-t[a].gf||g.teams.indexOf(a)-g.teams.indexOf(b));}
 function breakTie(blk,t,g){const m=mini(blk,g);const sorted=[...blk].sort((a,b)=>m[b].pts-m[a].pts||m[b].gd-m[a].gd||m[b].gf-m[a].gf);
- const segs=[];let cur=[sorted[0]];for(let i=1;i<sorted.length;i++){const a=sorted[i-1],b=sorted[i];if(m[a].pts===m[b].pts&&m[a].gd===m[b].gd&&m[a].gf===m[b].gf)cur.push(b);else{segs.push(cur);cur=[b]}}segs.push(cur);
+ const segs=groupRuns(sorted,(a,b)=>m[a].pts===m[b].pts&&m[a].gd===m[b].gd&&m[a].gf===m[b].gf);
  let res=[];for(const s of segs){if(s.length===1)res.push(s[0]);else if(s.length===blk.length)res=res.concat(byOverall(s,t,g));else res=res.concat(breakTie(s,t,g))}return res;}
 function rank(g){const t=stats(g);const byPts=[...g.teams].sort((a,b)=>t[b].pts-t[a].pts);
- const segs=[];let cur=[byPts[0]];for(let i=1;i<byPts.length;i++){if(t[byPts[i]].pts===t[byPts[i-1]].pts)cur.push(byPts[i]);else{segs.push(cur);cur=[byPts[i]]}}segs.push(cur);
+ const segs=groupRuns(byPts,(a,b)=>t[a].pts===t[b].pts);
  let order=[];for(const s of segs)order=order.concat(s.length>1?breakTie(s,t,g):s);return{t,order};}
 function thirdBoard(){const arr=GROUPS.map(g=>{const{t,order}=rank(g);const c=order[2];return{g:g.id,c,complete:isComplete(g),...t[c]};});
  arr.sort((x,y)=>y.pts-x.pts||y.gd-x.gd||y.gf-x.gf||GROUPS.findIndex(z=>z.id===x.g)-GROUPS.findIndex(z=>z.id===y.g));return arr;}
@@ -310,7 +320,7 @@ function renderGroups(){
    rows+=`<tr data-team="${c}">
      <td class="team"><div class="row"><span class="stripe ${s.str}"></span><span class="fl">${flag(c)}</span><span class="nm">${NAME[c]}</span></div></td>
      <td class="num">${x.w}</td><td class="num">${x.d}</td><td class="num">${x.l}</td>
-     <td class="num">${x.gd>0?'+':''}${x.gd}</td><td class="pts">${x.pts}</td></tr>`;});
+     <td class="num">${fmtGd(x.gd)}</td><td class="pts">${x.pts}</td></tr>`;});
   const third=order[2];const ts=status3(third);
   const note=ts.k==='alive'?`<div class="gnote"><span class="d"></span><span>${NAME[third]} sit 3rd — still chasing one of the 8 wildcard spots</span></div>`:'';
   html+=`<div class="gcard">
@@ -329,7 +339,7 @@ function renderRace(){
   html+=`<div class="rrow ${inz?'in':'out'}" data-team="${x.c}">
     <div class="rk">${i+1}</div>
     <div class="rt"><span class="fl">${flag(x.c)}</span><span class="nm">${NAME[x.c]}</span><span class="gp">Grp ${x.g}</span></div>
-    <div class="rec">${x.pts} pts · ${x.gd>0?'+':''}${x.gd}</div>
+    <div class="rec">${x.pts} pts · ${fmtGd(x.gd)}</div>
     <div class="rtag">${tag}</div></div>`;});
  $('#raceList').innerHTML=html;
  const t8=bd[7],t9=bd[8],playing=bd.filter(x=>!x.complete).length;
@@ -350,9 +360,9 @@ function openTeam(c){
   return `<div class="dmatch"><span class="o"><span class="fl">${flag(opp)}</span>${home?'vs':'at'} ${NAME[opp]}</span><span class="r ${r}">${gf}–${ga}</span></div>`;}).join('');
  let race='';
  if(idx===2){const bd=thirdBoard();const pos=bd.findIndex(y=>y.c===c);
-  race=`<div class="dsec"><h4>The race for the last 8</h4><p>Currently <b>${ordinal(pos+1)} of 12</b> third-placed teams — ${pos<8?'inside the eight that go through':'outside the eight that go through'} (${x.pts} pts, goal difference ${x.gd>0?'+':''}${x.gd}, ${x.gf} scored).</p></div>`;}
- const pc=s.k==='through'?'var(--green)':s.k==='alive'?'var(--amber)':'var(--red)';
- const pb=s.k==='through'?'var(--green-bg)':s.k==='alive'?'var(--amber-bg)':'var(--red-bg)';
+  race=`<div class="dsec"><h4>The race for the last 8</h4><p>Currently <b>${ordinal(pos+1)} of 12</b> third-placed teams — ${pos<8?'inside the eight that go through':'outside the eight that go through'} (${x.pts} pts, goal difference ${fmtGd(x.gd)}, ${x.gf} scored).</p></div>`;}
+ const pc=statusCssVar(s.k);
+ const pb=statusCssVar(s.k,'bg');
  $('#drawer').innerHTML=`<button class="x" onclick="closeDrawer()">✕</button>
   <div class="dh"><span class="fl">${flag(c)}</span><div><div class="nm serif">${NAME[c]}</div><div class="gp">Group ${g.id} · currently ${ordinal(idx+1)}</div></div></div>
   <span class="dpill" style="color:${pc};background:${pb}">${s.label}</span>
@@ -360,7 +370,7 @@ function openTeam(c){
    <div class="c"><div class="v">${x.pts}</div><div class="k">Points</div></div>
    <div class="c"><div class="v">${x.w}-${x.d}-${x.l}</div><div class="k">W-D-L</div></div>
    <div class="c"><div class="v">${x.gf}:${x.ga}</div><div class="k">Goals</div></div>
-   <div class="c"><div class="v">${x.gd>0?'+':''}${x.gd}</div><div class="k">Diff</div></div>
+   <div class="c"><div class="v">${fmtGd(x.gd)}</div><div class="k">Diff</div></div>
   </div>
   <div class="dsec"><h4>Where they stand</h4><p>${NOTE[c]||''}</p></div>
   ${race}
