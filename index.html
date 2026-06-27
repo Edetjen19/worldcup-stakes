@@ -242,7 +242,7 @@ function breakTie(blk,t,g){const m=mini(blk,g);const sorted=[...blk].sort((a,b)=
 function rank(g){const t=stats(g);const byPts=[...g.teams].sort((a,b)=>t[b].pts-t[a].pts);
  const segs=[];let cur=[byPts[0]];for(let i=1;i<byPts.length;i++){if(t[byPts[i]].pts===t[byPts[i-1]].pts)cur.push(byPts[i]);else{segs.push(cur);cur=[byPts[i]]}}segs.push(cur);
  let order=[];for(const s of segs)order=order.concat(s.length>1?breakTie(s,t,g):s);return{t,order};}
-function thirdBoard(){const arr=GROUPS.map(g=>{const{t,order}=rank(g);const c=order[2];return{g:g.id,c,complete:isComplete(g),...t[c]};});
+function thirdBoard(){const arr=GROUPS.map(g=>{const{t,order}=rank(g);const c=order[2];if(!c||!t[c])return null;return{g:g.id,c,complete:isComplete(g),...t[c]};}).filter(Boolean);
  arr.sort((x,y)=>y.pts-x.pts||y.gd-x.gd||y.gf-x.gf||GROUPS.findIndex(z=>z.id===x.g)-GROUPS.findIndex(z=>z.id===y.g));return arr;}
 
 /* 3-state status. Decided locks win first; once a group is complete, status is computed
@@ -252,7 +252,9 @@ function status3(c){
  if(LOCK_THROUGH.has(c))return{k:'through',label:'Through',str:'str-g'};
  if(LOCK_WILD.has(c))return{k:'through',label:'Through',str:'str-g'};
  if(LOCK_OUT.has(c))return{k:'out',label:'Knocked out',str:'str-r'};
- const g=GROUPS.find(x=>x.teams.includes(c));const{order}=rank(g);const idx=order.indexOf(c);
+ const g=GROUPS.find(x=>x.teams.includes(c));
+ if(!g)return{k:'alive',label:'Unknown',str:'str-a'};
+ const{order}=rank(g);const idx=order.indexOf(c);
  if(isComplete(g)){
   if(idx===0)return{k:'through',label:'Won group',str:'str-g'};
   if(idx===1)return{k:'through',label:'Through',str:'str-g'};
@@ -338,12 +340,20 @@ function renderRace(){
  $('#raceFoot').innerHTML=foot;
 }
 
-function renderAll(){renderStats();renderGames();renderGroups();renderRace();}
+function renderAll(){
+ const panels=[['stats',renderStats],['games',renderGames],['groups',renderGroups],['race',renderRace]];
+ panels.forEach(([name,fn])=>{try{fn()}catch(err){console.error(`[render] ${name} failed:`,err)}});
+}
 
 /* ===================== DRAWER ===================== */
 function ordinal(n){return['1st','2nd','3rd','4th'][n-1]||n+'th'}
 function openTeam(c){
- const g=GROUPS.find(x=>x.teams.includes(c));const{t,order}=rank(g);const x=t[c];const s=status3(c);const idx=order.indexOf(c);
+ if(!c){console.warn('[openTeam] called without team code');return}
+ const g=GROUPS.find(x=>x.teams.includes(c));
+ if(!g){console.warn('[openTeam] team not found in any group:',c);return}
+ const{t,order}=rank(g);const x=t[c];
+ if(!x){console.warn('[openTeam] no stats found for team:',c);return}
+ const s=status3(c);const idx=order.indexOf(c);
  const matches=g.m.filter(mm=>mm.includes(c)).map(mm=>{const e=eff(mm);const home=mm[0]===c;const opp=home?mm[1]:mm[0];
   if(!e.played)return `<div class="dmatch"><span class="o"><span class="fl">${flag(opp)}</span>${home?'vs':'at'} ${NAME[opp]}</span><span class="r up">${mm[5]||'to play'}</span></div>`;
   const gf=home?e.hs:e.as,ga=home?e.as:e.hs;const r=gf>ga?'w':gf<ga?'l':'';
@@ -375,7 +385,7 @@ document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{
  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));
  window.scrollTo({top:0});
 }));
-document.addEventListener('click',e=>{const tm=e.target.closest('[data-team]');if(tm)openTeam(tm.dataset.team);});
+document.addEventListener('click',e=>{const tm=e.target.closest('[data-team]');if(tm){try{openTeam(tm.dataset.team)}catch(err){console.error('[openTeam] render error:',err)}}});
 $('#scrim').addEventListener('click',closeDrawer);
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer()});
 
@@ -383,8 +393,14 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer()});
 async function init(){
  try{
   const res=await fetch('data.json?t='+Date.now(),{cache:'no-store'});
-  const d=await res.json();
-  GROUPS=d.groups;GROUPS.forEach(g=>g.m.forEach((mm,i)=>{if(mm.length<8)mm.push(g.id+'-'+i)}));
+  if(!res.ok)throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  let d;
+  try{d=await res.json()}catch(parseErr){throw new Error('Invalid JSON in data.json: '+parseErr.message)}
+  if(!d||!Array.isArray(d.groups)){throw new Error('data.json missing required "groups" array')}
+  GROUPS=d.groups;GROUPS.forEach(g=>{
+   if(!g||!Array.isArray(g.teams)||!Array.isArray(g.m)){console.warn('Skipping malformed group:',g);return}
+   g.m.forEach((mm,i)=>{if(Array.isArray(mm)&&mm.length<8)mm.push(g.id+'-'+i)});
+  });
   NOTE=d.notes||{};STAKE=d.stakes||{};
   WINNERS=new Set(d.winners||[]);LOCK_THROUGH=new Set(d.through||[]);LOCK_OUT=new Set(d.out||[]);LOCK_WILD=new Set(d.wild||[]);
   $('#asof').textContent='final group games · as of '+(d.asOf||'');
@@ -392,8 +408,9 @@ async function init(){
   $('#footnote').innerHTML=`Results captured ${d.asOfFull||''} from public sources (Wikipedia, ESPN, FIFA, Sky, FOX). ${done} of 12 groups complete. Not affiliated with FIFA.`;
   renderAll();
  }catch(err){
-  console.error('data load failed',err);
-  $('#gamesList').innerHTML='<p class="lead" style="color:var(--red)">Couldn\'t load the latest data. Please refresh the page.</p>';
+  console.error('[init] data load failed:',err);
+  const msg=err.message||'Unknown error';
+  $('#gamesList').innerHTML=`<p class="lead" style="color:var(--red)">Couldn't load the latest data (${msg}). Please refresh the page.</p>`;
  }
 }
 init();
